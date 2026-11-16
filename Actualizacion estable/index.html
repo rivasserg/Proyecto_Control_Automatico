@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Control de Tanque ESP32 - Híbrido</title>
+<style>
+    :root{
+        --bg:#0e1116; --card:#171b22; --card2:#1e232b; --line:#2a303a;
+        --txt:#e6ebf2; --muted:#8b95a5;
+        --ok:#2ecc71; --warn:#f1c40f; --bad:#e74c3c; --info:#3aa0ff; --purple:#a06bff;
+    }
+    *{box-sizing:border-box;}
+    body{font-family:"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--txt);margin:0;padding:14px;}
+    h1{font-size:18px;margin:0;}
+    h3{font-size:13px;margin:0 0 6px;color:#cdd6e3;}
+    .grid{display:grid;grid-template-columns:1fr 1.3fr;gap:14px;align-items:start;}
+    @media(max-width:980px){.grid{grid-template-columns:1fr;}}
+    .card{background:var(--card);padding:12px;border-radius:10px;border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.35);}
+    header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:10px;}
+    .status-chip{display:inline-flex;align-items:center;gap:6px;background:var(--card2);padding:4px 9px;border-radius:20px;border:1px solid var(--line);font-size:12px;}
+    .dot{height:9px;width:9px;border-radius:50%;display:inline-block;background:var(--bad);}
+    .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok);animation:pulse 1.6s infinite;}
+    .dot.warn{background:var(--warn);}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+
+    .card-top-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1px solid var(--line);padding-bottom:8px;}
+    .top-controls{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:flex-end;}
+    .rowflex{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:center;}
+    
+    .odometers-row{display:flex;justify-content:space-around;align-items:center;margin:4px 0 10px 0;gap:10px;}
+    .gauge-container{display:flex;flex-direction:column;align-items:center;justify-content:center;}
+    .gauge-svg{width:135px;height:78px;overflow:visible;}
+    .digital-display{
+        background:#000;border:2px solid #3aa0ff;border-radius:5px;padding:3px 6px;
+        font-family:'Courier New', monospace;font-weight:700;font-size:13px;color:#00ffcc;
+        box-shadow:inset 0 0 6px rgba(0,255,204,.3), 0 0 6px rgba(58,160,255,.2);
+        margin-top:-6px;text-align:center;min-width:110px;
+    }
+    .digital-label{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;}
+
+    .escena{position:relative;display:flex;justify-content:center;gap:20px;padding:2px 0 0;}
+    .tanque-wrap{position:relative;}
+    .tanque{
+        width:120px;height:230px;border:3px solid #cfd8e3;border-top:none;
+        border-bottom-left-radius:48px;border-bottom-right-radius:48px;
+        position:relative;overflow:hidden;background:#0b0e13;
+        cursor:pointer;transition:box-shadow .25s, transform .15s;
+    }
+    .tanque:hover{box-shadow:0 0 0 3px rgba(58,160,255,.35);}
+    .tanque:active{transform:scale(.99);}
+    .agua{position:absolute;bottom:0;left:0;width:100%;height:0;transition:height .6s ease, background-color .6s ease;}
+    .agua::before{
+        content:"";position:absolute;top:-6px;left:-10%;width:120%;height:12px;border-radius:50%;
+        background:rgba(255,255,255,.18);animation:ola 3.2s linear infinite;
+    }
+    @keyframes ola{0%{transform:translateX(0)}50%{transform:translateX(6%)}100%{transform:translateX(0)}}
+    .marca{position:absolute;left:0;width:100%;border-top:2px dashed rgba(255,255,255,.55);}
+    .marca span{position:absolute;right:2px;top:-14px;font-size:9px;color:#fff;background:rgba(0,0,0,.5);padding:1px 4px;border-radius:3px;}
+    .marca.max{border-color:#2ecc71;} .marca.max span{color:#2ecc71;}
+    .marca.min{border-color:#f1c40f;} .marca.min span{color:#f1c40f;}
+    .escala{position:absolute;left:-30px;top:0;height:100%;width:24px;font-size:8px;color:var(--muted);}
+    .escala div{position:absolute;right:0;transform:translateY(-50%);white-space:nowrap;}
+
+    .bomba-box{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px;}
+    .bomba{width:54px;height:54px;border-radius:50%;border:3px solid #4a5464;background:#2a303a;
+           display:flex;align-items:center;justify-content:center;cursor:pointer;
+           transition:all .3s;position:relative;}
+    .bomba svg{width:28px;height:28px;fill:#8b95a5;transition:fill .3s;}
+    .bomba.on{border-color:var(--ok);background:rgba(46,204,113,.12);box-shadow:0 0 14px rgba(46,204,113,.5);}
+    .bomba.on svg{fill:var(--ok);animation:girar 1.1s linear infinite;transform-origin:center;}
+    .bomba.off{opacity:.75;}
+    @keyframes girar{to{transform:rotate(360deg);}}
+    .bomba small{font-size:10px;color:var(--muted);}
+
+    .flujo{position:relative;height:50px;margin:4px auto 0;width:80%;}
+    .pipe{position:absolute;left:0;right:0;top:50%;height:10px;background:linear-gradient(#39414d,#20242c);
+          border-radius:5px;border:1px solid #4a5464;transform:translateY(-50%);overflow:hidden;}
+    .pipe .stream{position:absolute;top:0;bottom:0;left:0;width:0%;
+          background:repeating-linear-gradient(90deg,#3aa0ff 0 10px,#7ac2ff 10px 20px);
+          transition:width .5s ease, opacity .3s;}
+    .pipe.franco .stream{animation:mover .6s linear infinite;}
+    @keyframes mover{to{background-position:20px 0;}}
+    .lbl-flujo{position:absolute;top:50%;transform:translateY(-50%);font-size:10px;color:var(--muted);}
+    .flecha{position:absolute;top:50%;transform:translateY(-50%);color:#7ac2ff;font-size:14px;}
+
+    .contenedor-wrap{display:flex;flex-direction:column;align-items:center;margin-top:4px;}
+    .contenedor{width:110px;height:60px;border:2px solid #cfd8e3;border-top:none;
+                border-bottom-left-radius:12px;border-bottom-right-radius:12px;
+                position:relative;overflow:hidden;background:#0b0e13;}
+    .contenedor .rec{position:absolute;bottom:0;left:0;width:100%;height:0;background:rgba(58,160,255,.55);transition:height .6s ease;}
+    .lbl-fuga-val{font-size:11px;font-weight:700;color:#7ac2ff;margin-top:3px;}
+
+    .badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700;}
+    .b-ok{background:rgba(46,204,113,.15);color:var(--ok);}
+    .b-warn{background:rgba(241,196,15,.15);color:var(--warn);}
+    .b-bad{background:rgba(231,76,60,.15);color:#ff8b7d;}
+
+    .info-box{background:var(--card2);padding:6px 10px;border-radius:7px;margin-top:8px;font-size:11.5px;border-left:3px solid var(--info);}
+    .info-box p{margin:3px 0;display:flex;justify-content:space-between;}
+    .kv{color:var(--muted);}
+
+    .alerta{margin-top:8px;padding:6px 10px;border-radius:6px;font-size:11.5px;font-weight:600;display:none;}
+    .alerta.show{display:block;}
+    .alerta.ok{background:rgba(46,204,113,.12);color:var(--ok);}
+    .alerta.warn{background:rgba(241,196,15,.12);color:var(--warn);}
+    .alerta.bad{background:rgba(231,76,60,.15);color:#ff8b7d;}
+
+    .btn{padding:6px 10px;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:11px;transition:.2s;}
+    .btn:hover{filter:brightness(1.12);}
+    .btn:disabled{opacity:.45;cursor:not-allowed;}
+    .btn-green{background:var(--ok);color:#04140a;} .btn-red{background:var(--bad);color:#fff;}
+    .btn-blue{background:var(--info);color:#fff;} .btn-warning{background:var(--warn);color:#201a00;}
+    .btn-ghost{background:#2a303a;color:var(--txt);border:1px solid var(--line);}
+
+    .tabs{display:flex;gap:6px;}
+    .tabs .btn.active{outline:2px solid var(--info);}
+    .table-scroll{max-height:190px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;margin-top:8px;}
+    table{width:100%;border-collapse:collapse;}
+    th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left;font-size:11.5px;}
+    th{background:var(--card2);position:sticky;top:0;z-index:2;color:#cdd6e3;}
+    tbody tr:hover{background:rgba(58,160,255,.07);}
+    .hidden{display:none!important;}
+    input,select{padding:7px;border-radius:6px;border:1px solid var(--line);background:#0b0e13;color:var(--txt);width:100%;}
+    .hintbar{font-size:10px;color:var(--muted);text-align:center;margin-top:4px;}
+
+    .chart-box{background:var(--card2);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:10px;}
+    .chart-box h4{margin:0 0 8px 0;font-size:12px;color:#cdd6e3;display:flex;justify-content:space-between;align-items:center;}
+    canvas#chartCanvas{width:100%;height:230px;display:block;}
+
+    .modal-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center;
+        z-index: 9999; backdrop-filter: blur(3px);
+    }
+    .modal-card {
+        background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+        padding: 20px; width: 340px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    .modal-card h3 { margin-top: 0; font-size: 16px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+    .modal-info-row { display: flex; justify-content: space-between; margin: 8px 0; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div id="dbModal" class="modal-overlay hidden">
+    <div class="modal-card">
+        <h3>🗄️ Estado de Conexión Base de Datos</h3>
+        <div id="dbModalStatusMsg" style="margin: 10px 0; font-weight: bold; font-size: 13px;">Verificando conexión...</div>
+        <div class="modal-info-row"><span class="kv">Host:</span> <span id="dbHost">—</span></div>
+        <div class="modal-info-row"><span class="kv">Base de Datos:</span> <span id="dbName">—</span></div>
+        <div class="modal-info-row"><span class="kv">Usuario:</span> <b style="color:#3aa0ff;" id="dbUser">root</b></div>
+        <div class="modal-info-row"><span class="kv">Contraseña:</span> <b style="color:#f1c40f;" id="dbPass">root</b></div>
+        <div id="dbErrorContainer" class="hidden" style="margin-top: 8px; font-size: 11px; color: var(--bad); background: rgba(231,76,60,0.1); padding: 6px; border-radius: 4px;"></div>
+        <button class="btn btn-blue" style="width:100%; margin-top:14px;" onclick="cerrarModalDb()">Continuar al Sistema</button>
+    </div>
+</div>
+
+<div id="loginSection" class="card" style="max-width:360px;margin:60px auto;">
+    <h2 style="margin-top:0;font-size:18px;">Ingreso al Sistema</h2>
+    <label style="font-size:11px;color:#8b95a5">Usuario</label>
+    <input type="text" id="userIn" placeholder="Usuario">
+    <label style="font-size:11px;color:#8b95a5;display:block;margin-top:8px">Contraseña</label>
+    <input type="password" id="passIn" placeholder="Contraseña">
+    <button class="btn btn-blue" style="margin-top:14px;width:100%" onclick="login()">Ingresar</button>
+    <div style="display:flex; justify-content:space-between; margin-top:8px;">
+        <button class="btn btn-ghost" style="font-size:10px; width:100%;" onclick="verEstadoDB()">🔍 Ver Estado Base de Datos</button>
+    </div>
+    <p id="loginMsg" style="color:#e74c3c;font-size:12px;margin-bottom:0"></p>
+</div>
+
+<div id="dashboardSection" class="hidden">
+    <header>
+        <h1>💧 Monitoreo e Historial — Tanque ESP32</h1>
+        <div class="rowflex">
+            <span class="status-chip"><span id="dot-esp" class="dot"></span><span id="text-esp">ESP32 sin datos</span></span>
+            <span class="status-chip">👤 <b id="lblUsuario"></b> · <span id="lblRol" style="color:#8b95a5"></span></span>
+            <button class="btn btn-ghost" onclick="location.reload()">Salir</button>
+        </div>
+    </header>
+
+    <div class="grid">
+        <div class="card">
+            <div class="card-top-header">
+                <h3>Panel Operativo</h3>
+                <div class="top-controls">
+                    <button id="btnSistema" class="btn btn-green" onclick="toggleSistema()">Iniciar</button>
+                    <button id="btnModoManual" class="btn btn-blue" onclick="toggleModoManual()" style="display:none;">Manual</button>
+                    <button id="btnBombaManual" class="btn btn-red" onclick="toggleBombaManual()" style="display:none;" disabled>Bomba</button>
+                </div>
+            </div>
+
+            <div class="odometers-row">
+                <div class="gauge-container">
+                    <svg class="gauge-svg" viewBox="0 0 200 120">
+                        <path d="M 20 100 A 80 80 0 0 1 154 34" fill="none" stroke="#f1c40f" stroke-width="14" stroke-linecap="round"/>
+                        <path d="M 154 34 A 80 80 0 0 1 180 100" fill="none" stroke="#e74c3c" stroke-width="14" stroke-linecap="round"/>
+                        <path id="gaugeCmProgress" d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#3aa0ff" stroke-width="6" stroke-dasharray="251.32" stroke-dashoffset="251.32"/>
+                        <g id="needleCmGroup" transform="rotate(-90 100 100)" style="transition: transform 0.5s ease-in-out;">
+                            <polygon points="96,100 100,22 104,100" fill="#f1c40f"/>
+                            <circle cx="100" cy="100" r="7" fill="#e6ebf2"/>
+                        </g>
+                    </svg>
+                    <div class="digital-display" style="border-color:#f1c40f; color:#ffea75; box-shadow:inset 0 0 6px rgba(241,196,15,.3), 0 0 6px rgba(241,196,15,.2);">
+                        <span id="lblNivelCm">0.0 cm</span>
+                        <span class="digital-label">Nivel Superior</span>
+                    </div>
+                </div>
+
+                <div class="gauge-container">
+                    <svg class="gauge-svg" viewBox="0 0 200 120">
+                        <path d="M 20 100 A 80 80 0 0 1 154 34" fill="none" stroke="#3aa0ff" stroke-width="14" stroke-linecap="round"/>
+                        <path d="M 154 34 A 80 80 0 0 1 180 100" fill="none" stroke="#e74c3c" stroke-width="14" stroke-linecap="round"/>
+                        <path id="gaugeMlProgress" d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#00ffcc" stroke-width="6" stroke-dasharray="251.32" stroke-dashoffset="251.32"/>
+                        <g id="needleMlGroup" transform="rotate(-90 100 100)" style="transition: transform 0.5s ease-in-out;">
+                            <polygon points="96,100 100,22 104,100" fill="#e74c3c"/>
+                            <circle cx="100" cy="100" r="7" fill="#e6ebf2"/>
+                        </g>
+                    </svg>
+                    <div class="digital-display">
+                        <span id="lblVolumeMl">0 mL</span>
+                        <span class="digital-label">Volumen Superior</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="escena">
+                <div class="tanque-wrap">
+                    <div class="escala" id="escala"></div>
+                    <div class="tanque" id="tanqueEl" onclick="clikTanque()" title="Clic para alternar vista de detalle">
+                        <div id="aguaFill" class="agua"></div>
+                        <div id="marcaMax" class="marca max"><span id="marcaMaxTxt">SP 12.0</span></div>
+                        <div id="marcaMin" class="marca min"><span id="marcaMinTxt">ARR 8.0</span></div>
+                    </div>
+                    <div class="hintbar" id="nivelHint">Nivel: 0.0 cm</div>
+                </div>
+
+                <div class="bomba-box">
+                    <div class="bomba off" id="bombaEl" onclick="clikBomba()" title="Estado de la bomba principal">
+                        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 3a7 7 0 017 7h-2a5 5 0 00-5-5V5zm0 14a7 7 0 01-7-7h2a5 5 0 005 5v2zm5-7h2v2h-2v-2z"/></svg>
+                    </div>
+                    <small id="bombaLbl">BOMBA OFF</small>
+                    <small style="color:#4a5464">D21</small>
+                </div>
+            </div>
+
+            <div class="flujo" id="flujoEl" onclick="clikFlujo()" title="Clic: ver estado del flujo">
+                <div class="pipe" id="pipeEl"><div class="stream" id="streamEl"></div></div>
+                <span class="flecha" id="flechaFlow" style="left:6px">➜</span>
+                <span class="lbl-flujo" id="flujoLbl" style="right:0">Flujo: NO</span>
+            </div>
+
+            <div class="contenedor-wrap">
+                <div class="contenedor">
+                    <div class="rec" id="recFill"></div>
+                </div>
+                <div class="lbl-fuga-val">Tanque Inferior: <span id="lblTanqueInfMl">0.0 mL (0.00 L)</span></div>
+            </div>
+
+            <h2 style="text-align:center;margin:6px 0 0;font-size:15px;color:#7ac2ff;" id="lblTanqueInfCm">0.0 cm (Inf)</h2>
+
+            <div class="info-box">
+                <p><span class="kv">Bomba principal (D21)</span> <span id="lblBombaPpal">APAGADA</span></p>
+                <p><span class="kv">Bomba auxiliar (D27)</span> <span id="lblBombaAux">APAGADA</span></p>
+                <p><span class="kv">Flujo de agua</span> <span id="lblFlujo">NO</span></p>
+            </div>
+
+            <!-- ============ PANEL DE CONTROL HÍBRIDO ============ -->
+            <div class="info-box hidden" id="pidPanel" style="border-left-color:#2ecc71;margin-top:10px;">
+                <p style="display:block;margin:0 0 8px 0;"><b>🎛️ Control Híbrido (Setpoint + Histéresis Exacta)</b>
+                   <span style="font-weight:400;font-size:10px;color:var(--muted)">(Activa al 100% abajo del mínimo y apaga exactamente en el Setpoint)</span>
+                </p>
+                
+                <div style="margin-bottom:8px;">
+                    <div style="display:flex; justify-content:space-between; font-size:11px;">
+                        <span class="kv">Setpoint / Corte Superior (cm):</span>
+                        <b style="color:#3aa0ff;" id="valSetpoint">12.0 cm</b>
+                    </div>
+                    <input id="pidSetpoint" type="range" min="5.0" max="13.0" step="0.1" value="12.0" 
+                           style="width:100%; cursor:pointer;">
+                </div>
+
+                <div style="margin-bottom:8px;">
+                    <div style="display:flex; justify-content:space-between; font-size:11px;">
+                        <span class="kv">Nivel Mínimo Histéresis / Arranque (cm):</span>
+                        <b style="color:#f1c40f;" id="valMinHist">8.0 cm</b>
+                    </div>
+                    <input id="pidMinHist" type="range" min="2.0" max="11.0" step="0.1" value="8.0" 
+                           style="width:100%; cursor:pointer;">
+                </div>
+
+                <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:flex-end; margin-top:6px;">
+                    <input id="pidKp" type="hidden" value="25">
+                    <input id="pidKi" type="hidden" value="0.5">
+                    <input id="pidKd" type="hidden" value="2.0">
+                    <button id="btnAplicarPID" class="btn btn-blue" style="width:100%;" onclick="aplicarPID()">Aplicar Cambios al Sistema</button>
+                </div>
+
+                <div style="margin-top:8px;font-size:12px;">
+                    <span class="kv">Potencia Bomba</span> <span id="pidSalidaOut">—</span> &nbsp;·&nbsp;
+                    <span class="kv">Faltante (SP − nivel)</span> <span id="pidErrorOut">—</span>
+                </div>
+                <div style="height:8px;background:#1a1f2b;border-radius:6px;margin-top:6px;overflow:hidden;">
+                    <div id="pidSalidaBar" style="height:100%;width:0%;background:#2ecc71;transition:width .4s;"></div>
+                </div>
+                <div id="pidMsg" style="font-size:11px;color:var(--muted);margin-top:4px;"></div>
+            </div>
+
+            <div class="info-box" style="border-left-color:var(--purple)">
+                <p style="display:block;font-weight:700;color:#c9aaff;margin-bottom:4px">🔍 Validación cruzada (ESP32 ↔ Dashboard)</p>
+                <p><span class="kv">Nivel saneado</span> <span id="lblNivelSaneado">—</span></p>
+                <p><span class="kv">Lectura ultrasónica</span> <span id="lblUltra">—</span></p>
+                <p><span class="kv">Sensor OK</span> <span id="lblSensorOk" class="badge b-warn">—</span></p>
+                <p><span class="kv">Coherencia</span> <span id="lblCoherencia" class="badge b-warn">—</span></p>
+                <p><span class="kv">Delta (ultra − nivel)</span> <span id="lblDelta">—</span></p>
+                <p><span class="kv">Tendencia</span> <span id="lblTendencia">—</span></p>
+                <p><span class="kv">Última telemetría</span> <span id="lblUltimo">—</span></p>
+            </div>
+        </div>
+
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                <div class="tabs">
+                    <button class="btn btn-blue active" id="tbMed" onclick="verTab('tabMediciones', this)">Mediciones MySQL</button>
+                    <button class="btn btn-ghost" id="tbAud" onclick="verTab('tabAuditoria', this)">Auditoría</button>
+                </div>
+                <button id="btnLimpiarBD" class="btn btn-warning" onclick="limpiarBaseDatos()">Limpiar BD</button>
+            </div>
+
+            <div id="registroInfo" style="font-size:11px;color:#8b95a5;margin:6px 0 2px;">
+                🗄️ Registro por centímetro: <span id="lblRegistroEstado">esperando telemetría…</span>
+            </div>
+
+            <div id="tabMediciones" class="table-scroll">
+                <table>
+                    <thead><tr><th>ID</th><th>Fecha/Hora</th><th>Nivel Sup. (cm)</th><th>Ultra (cm)</th><th>Flujo</th><th>Bomba</th></tr></thead>
+                    <tbody id="bodyMediciones"><tr><td colspan="6" style="color:#8b95a5">Sin registros…</td></tr></tbody>
+                </table>
+            </div>
+
+            <div id="tabAuditoria" class="table-scroll hidden">
+                <table>
+                    <thead><tr><th>ID</th><th>Fecha/Hora</th><th>Usuario</th><th>Acción</th></tr></thead>
+                    <tbody id="bodyAuditoria"><tr><td colspan="4" style="color:#8b95a5">Sin registros…</td></tr></tbody>
+                </table>
+            </div>
+
+            <div class="chart-box">
+                <h4>
+                    <span>📈 Evolución Temporal del Nivel de Agua</span>
+                    <span style="font-weight:400;font-size:10px;color:var(--muted)">Eje Y (0 a 21 cm) · <span style="color:#2ecc71">verde: setpoint</span> · <span style="color:#f1c40f">amarillo: arranque</span></span>
+                </h4>
+                <canvas id="chartCanvas"></canvas>
+            </div>
+
+            <div class="info-box" style="border-left-color:#f1c40f;margin-top:8px;">
+                <p style="display:block">
+                    <b>Diagnóstico de lecturas</b><br>
+                    <span id="diagTxt" style="color:#8b95a5">Esperando telemetría…</span><br>
+                    <span id="diagCiclo" style="color:#8b95a5">Ciclo de bomba: —</span>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const CFG = {
+    NIVEL_MAX: 13.0,          
+    NIVEL_MIN: 8.0,           
+    ALTURA_TANQUE: 19.8,      
+    RESIDUO_FONDO: 2.4,       
+    ML_POR_CM: 186.0,         
+    TOLERANCIA: 2.0,
+    MILIS_DESCONEXION: 5000
+};
+
+let SP_ACTUAL = 12.0;   
+let MINH_ACTUAL = 8.0;  
+function spEfectivo(){ return isFinite(SP_ACTUAL)? SP_ACTUAL : CFG.NIVEL_MAX; }
+function minHEfectivo(){ return isFinite(MINH_ACTUAL)? MINH_ACTUAL : CFG.NIVEL_MIN; }
+
+let datos = { nivel_cm:0, lectura_ultra:null, sensor_ok:false, hay_flujo:false,
+              estado_bomba:false, estado_bomba_aux:false, modo_manual:false,
+              comando_bomba_manual:false, veredicto:'SIN_DATOS', tendencia:'ESTABLE',
+              deltaUltra:null, mensajeValidacion:'', ultimoReporte:0, sistemaIniciado:false };
+
+let hist = [];
+let userRol = '';
+let vistaDetalle = false;
+
+window.addEventListener('DOMContentLoaded', () => {
+    verEstadoDB();
+});
+
+async function verEstadoDB() {
+    const modal = document.getElementById('dbModal');
+    const statusMsg = document.getElementById('dbModalStatusMsg');
+    const dbHost = document.getElementById('dbHost');
+    const dbName = document.getElementById('dbName');
+    const dbUser = document.getElementById('dbUser');
+    const dbPass = document.getElementById('dbPass');
+    const errContainer = document.getElementById('dbErrorContainer');
+
+    modal.classList.remove('hidden');
+    statusMsg.innerText = "Comprobando conexión con MySQL...";
+    statusMsg.style.color = "#f1c40f";
+    errContainer.classList.add('hidden');
+
+    try {
+        const res = await fetch('/api/db-status');
+        const data = await res.json();
+
+        dbHost.innerText = data.host;
+        dbName.innerText = data.database;
+        dbUser.innerText = data.user;
+        dbPass.innerText = data.password;
+
+        if (data.conectado) {
+            statusMsg.innerText = "¡Conexión Exitosa con la Base de Datos!";
+            statusMsg.style.color = "#2ecc71";
+        } else {
+            statusMsg.innerText = "❌ Error de Conexión con la Base de Datos";
+            statusMsg.style.color = "#e74c3c";
+            errContainer.innerText = data.error;
+            errContainer.classList.remove('hidden');
+        }
+    } catch (e) {
+        statusMsg.innerText = "❌ Error al contactar con el servidor backend";
+        statusMsg.style.color = "#e74c3c";
+        errContainer.innerText = e.message;
+        errContainer.classList.add('hidden');
+    }
+}
+
+function cerrarModalDb() {
+    document.getElementById('dbModal').classList.add('hidden');
+}
+
+function actualizarValoresSliders() {
+    document.getElementById('valSetpoint').innerText = document.getElementById('pidSetpoint').value + ' cm';
+    document.getElementById('valMinHist').innerText = document.getElementById('pidMinHist').value + ' cm';
+}
+
+async function login(){
+    const u=document.getElementById('userIn').value, p=document.getElementById('passIn').value;
+    try{
+        const res=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+        if(res.ok){
+            const d=await res.json(); userRol=d.rol;
+            document.getElementById('lblUsuario').innerText=d.username;
+            document.getElementById('lblRol').innerText=d.rol;
+            document.getElementById('loginSection').classList.add('hidden');
+            document.getElementById('dashboardSection').classList.remove('hidden');
+            if(userRol==='invitado'){
+                document.getElementById('btnLimpiarBD').style.display='none';
+                document.getElementById('pidPanel').classList.add('hidden');   
+            } else {
+                document.getElementById('pidPanel').classList.remove('hidden');
+            }
+            iniciarPolling();
+        } else { document.getElementById('loginMsg').innerText='Credenciales incorrectas'; }
+    }catch(e){ document.getElementById('loginMsg').innerText='No se pudo conectar al servidor'; }
+}
+
+async function poll(){
+    try{
+        const res=await fetch('/api/estado');
+        const data=await res.json();
+        if(data.estadoSistema) datos=Object.assign(datos,data.estadoSistema);
+        pintarDiagnostico(data.diagnosticoRegistro, data.diagnosticoCiclo);
+    }catch(e){ }
+    pintar();
+    cargarTablas();
+}
+
+function pintarDiagnostico(dr, dc){
+    const lbl = document.getElementById('lblRegistroEstado');
+    if (lbl && dr) {
+        if (dr.estado === 'ERROR') {
+            lbl.innerHTML = '<span style="color:#e74c3c">ERROR al guardar: ' + (dr.error || 'desconocido') + '</span>';
+        } else if (!datos.sistemaIniciado) {
+            lbl.innerHTML = '<span style="color:#f1c40f">en espera (sistema detenido)</span>';
+        } else if (!dr.ultimoRegistro) {
+            lbl.innerHTML = '<span style="color:#f1c40f">listo, sin cambios de centímetro todavía</span>';
+        } else {
+            const seg = Math.round((Date.now() - dr.ultimoRegistro) / 1000);
+            lbl.innerHTML = '<span style="color:#2ecc71">OK</span> · ' + dr.insertados +
+                            ' registros · último hace ' + seg + ' s' +
+                            (dr.motivo ? ' (' + dr.motivo + ')' : '');
+        }
+    }
+    const dcEl = document.getElementById('diagCiclo');
+    if (dcEl && dc) {
+        const faltaTxt = (dc.faltante > 0) ? dc.faltante.toFixed(1) + ' cm para el setpoint'
+                                           : 'en setpoint';
+        let txt = 'Ciclo de bomba: ' + (dc.bomba ? 'EN MARCHA' : 'en reposo') +
+                  ' · ' + faltaTxt + (dc.motivo ? ' · ' + dc.motivo : '');
+        if (dc.bomba && dc.segSinSubir > 0) {
+            txt += ' · ' + dc.segSinSubir + ' s en marcha';
+        }
+        if (dc.bomba && dc.estancada) {
+            txt += ' ⚠️ no sube: revise la bomba o la manguera';
+        }
+        dcEl.innerText = txt;
+        dcEl.style.color = dc.bomba ? (dc.estancada ? '#f1c40f' : '#2ecc71') : '#8b95a5';
+    }
+}
+
+function evaluarLocal(){
+    const ahora=Date.now();
+    const edad = datos.ultimoReporte>0 ? ahora-datos.ultimoReporte : Infinity;
+    const ultra=datos.lectura_ultra, nivel=Number(datos.nivel_cm)||0;
+
+    if(edad>CFG.MILIS_DESCONEXION)
+        return {estado:'SIN_DATOS', clase:'bad', mensaje:'⛔ Sin lecturas del ESP32.'};
+    if(datos.sensor_ok===false)
+        return {estado:'SENSOR_NO_FIABLE', clase:'warn', mensaje:'⚠️ Sensor no confiable.'};
+    if(ultra===null||ultra===undefined)
+        return {estado:'SIN_ULTRA', clase:'warn', mensaje:'⚠️ Sin lectura ultrasónica separada.'};
+    const delta=ultra-nivel;
+    if(Math.abs(delta)>CFG.TOLERANCIA)
+        return {estado:'INCOHERENTE', clase:'warn', delta, mensaje:'⚠️ Ultrasónico no concuerda con nivel.'};
+    let tend='—';
+    if(hist.length>=2){const d=nivel-hist[hist.length-2].nivel; tend=d>0.05?'⬆ subiendo':(d<-0.05?'⬇ bajando':'➙ estable');}
+    return {estado:'OK', clase:'ok', delta, tendencia:tend, mensaje:'✅ Lectura coherente.'};
+}
+
+function pintar(){
+    const nivel=Number(datos.nivel_cm)||0;
+    const ultra=(datos.lectura_ultra===null||datos.lectura_ultra===undefined)?null:Number(datos.lectura_ultra);
+
+    const nivelEfectivoSup = Math.max(CFG.RESIDUO_FONDO, nivel);
+    const volumenSupMl = nivelEfectivoSup * CFG.ML_POR_CM;
+
+    const margenSeguridadMl = 1.0 * CFG.ML_POR_CM;
+    const volumenInfMl = (CFG.NIVEL_MAX * CFG.ML_POR_CM) - volumenSupMl + margenSeguridadMl;
+    const volumenInfL = volumenInfMl / 1000.0;
+    const alturaInfCm = volumenInfMl / CFG.ML_POR_CM;
+
+    document.getElementById('lblVolumeMl').innerText = volumenSupMl.toLocaleString('es-ES', {maximumFractionDigits: 1}) + ' mL';
+    document.getElementById('lblNivelCm').innerText = nivel.toFixed(1) + ' cm';
+
+    document.getElementById('lblTanqueInfMl').innerText = `${volumenInfMl.toLocaleString('es-ES', {maximumFractionDigits:1})} mL (${volumenInfL.toFixed(2)} L)`;
+    document.getElementById('lblTanqueInfCm').innerText = `${alturaInfCm.toFixed(1)} cm (Inf)`;
+
+    const maxNivelVisual = 21.0; 
+    const anguloMl = Math.max(-90, Math.min(90, (nivel / maxNivelVisual) * 180 - 90));
+    const anguloCm = Math.max(-90, Math.min(90, (nivel / maxNivelVisual) * 180 - 90));
+
+    document.getElementById('needleMlGroup').setAttribute('transform', `rotate(${anguloMl} 100 100)`);
+    document.getElementById('needleCmGroup').setAttribute('transform', `rotate(${anguloCm} 100 100)`);
+
+    const maxDash = 251.32;
+    const offset = maxDash - Math.max(0, Math.min(1, nivel / maxNivelVisual)) * maxDash;
+    document.getElementById('gaugeMlProgress').setAttribute('stroke-dashoffset', offset);
+    document.getElementById('gaugeCmProgress').setAttribute('stroke-dashoffset', offset);
+
+    const pctInf = Math.min(100, (volumenInfMl / (14.0 * CFG.ML_POR_CM)) * 100);
+    document.getElementById('recFill').style.height = pctInf + '%';
+
+    hist.push({t: new Date().toLocaleTimeString(), nivel: nivel});
+    if(hist.length > 10) hist.shift();
+    dibujarGrafica();
+
+    const edad=datos.ultimoReporte>0?Date.now()-datos.ultimoReporte:Infinity;
+    const dot=document.getElementById('dot-esp'), text=document.getElementById('text-esp');
+    if(edad<CFG.MILIS_DESCONEXION){ dot.className='dot on'; text.innerText='ESP32 Conectado'; }
+    else if(datos.ultimoReporte>0){ dot.className='dot warn'; text.innerText='ESP32 sin telemetría'; }
+    else { dot.className='dot'; text.innerText='ESP32 sin datos'; }
+
+    document.getElementById('nivelHint').innerText='Nivel Sup: '+nivel.toFixed(1)+' cm';
+
+    const pct=Math.max(0,Math.min(100,(nivel/maxNivelVisual)*100));
+    const agua=document.getElementById('aguaFill');
+    agua.style.height=pct+'%';
+    const SP = spEfectivo(), MNH = minHEfectivo();
+    if(nivel>=SP)             agua.style.background='linear-gradient(180deg,#2ecc71,#1e8f4e)';
+    else if(nivel>=MNH)           agua.style.background='linear-gradient(180deg,#f1c40f,#c9a106)';
+    else                          agua.style.background='linear-gradient(180deg,#e74c3c,#a8231a)';
+
+    const marcaMaxEl = document.getElementById('marcaMax');
+    const marcaMinEl = document.getElementById('marcaMin');
+    marcaMaxEl.style.bottom=(SP/maxNivelVisual*100)+'%';
+    marcaMinEl.style.bottom=(MNH/maxNivelVisual*100)+'%';
+    document.getElementById('marcaMaxTxt').innerText='SP '+SP.toFixed(1);
+    document.getElementById('marcaMinTxt').innerText='ARR '+MNH.toFixed(1);
+
+    const bombaEl=document.getElementById('bombaEl');
+    const bombaOn=!!datos.estado_bomba;
+    bombaEl.className='bomba '+(bombaOn?'on':'off');
+    document.getElementById('bombaLbl').innerText=bombaOn?'BOMBA ON':'BOMBA OFF';
+    document.getElementById('bombaLbl').style.color=bombaOn?'#2ecc71':'#8b95a5';
+
+    const flujoOn=!!datos.hay_flujo || (bombaOn && nivel < SP);
+    document.getElementById('streamEl').style.width=flujoOn?'100%':'0%';
+    document.getElementById('pipeEl').classList.toggle('franco',flujoOn);
+    document.getElementById('flujoLbl').innerText='Flujo: '+(flujoOn?'SÍ':'NO');
+    document.getElementById('flujoLbl').style.color=flujoOn?'#7ac2ff':'#8b95a5';
+
+    setBombaLbl('lblBombaPpal',bombaOn);
+    setBombaLbl('lblBombaAux',!!datos.estado_bomba_aux);
+    document.getElementById('lblFlujo').innerText=flujoOn?'SÍ':'NO';
+    document.getElementById('lblFlujo').style.color=flujoOn?'#2ecc71':'#e74c3c';
+    document.getElementById('lblUltimo').innerText=datos.ultimoReporte>0?new Date(datos.ultimoReporte).toLocaleTimeString():'—';
+
+    document.getElementById('lblNivelSaneado').innerText=nivel.toFixed(1)+' cm';
+    document.getElementById('lblUltra').innerText=ultra!==null?ultra.toFixed(1)+' cm':'—';
+
+    const sok=document.getElementById('lblSensorOk');
+    if(datos.sensor_ok===true){sok.innerText='SÍ';sok.className='badge b-ok';sok.style.color='#2ecc71';}
+    else if(datos.sensor_ok===false){sok.innerText='NO';sok.className='badge b-bad';sok.style.color='#ff8b7d';}
+    else {sok.innerText='—';sok.className='badge b-warn';}
+
+    let ev;
+    if(datos.veredicto && datos.veredicto!=='SIN_DATOS' && datos.mensajeValidacion){
+        const clase = (datos.veredicto==='OK')?'ok':(datos.veredicto==='ANOMALIA'||datos.veredicto==='NO_CONFIABLE')?'bad':'warn';
+        ev={estado:datos.veredicto, clase, delta:datos.deltaUltra, tendencia:datos.tendencia, mensaje:datos.mensajeValidacion};
+    } else { ev=evaluarLocal(); }
+
+    const badge=document.getElementById('lblCoherencia');
+    badge.innerText=ev.estado.replace(/_/g,' ');
+    badge.className='badge '+(ev.clase==='ok'?'b-ok':ev.clase==='warn'?'b-warn':'b-bad');
+    badge.style.color=ev.clase==='ok'?'#2ecc71':ev.clase==='warn'?'#f1c40f':'#ff8b7d';
+
+    document.getElementById('lblDelta').innerText=(ev.delta!==undefined&&ev.delta!==null)?((ev.delta>0?'+':'')+ev.delta.toFixed(1)+' cm'):'—';
+    const tend=ev.tendencia||datos.tendencia||'—';
+    document.getElementById('lblTendencia').innerText = tend==='SUBIENDO'?'⬆ subiendo':tend==='BAJANDO'?'⬇ bajando':'➙ estable';
+
+    const al=document.getElementById('alertaPrincipal');
+    if(al){
+        al.innerText=ev.mensaje;
+        al.className='alerta show '+(ev.clase==='ok'?'ok':ev.clase==='warn'?'warn':'bad');
+    }
+    document.getElementById('diagTxt').innerText=ev.mensaje;
+
+    const btnS=document.getElementById('btnSistema');
+    btnS.innerText=datos.sistemaIniciado?'Detener':'Iniciar';
+    btnS.className='btn '+(datos.sistemaIniciado?'btn-red':'btn-green');
+}
+
+function dibujarGrafica(){
+    const canvas = document.getElementById('chartCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = 230;
+
+    const w = canvas.width;
+    const h = canvas.height;
+
+    const paddingLeft = 38;
+    const paddingBottom = 26;
+    const paddingTop = 14;
+    const paddingRight = 14;
+
+    const graphWidth = w - paddingLeft - paddingRight;
+    const graphHeight = h - paddingTop - paddingBottom;
+
+    ctx.clearRect(0, 0, w, h);
+
+    const maxValY = 21.0;
+    ctx.strokeStyle = '#2a303a';
+    ctx.lineWidth = 1;
+    ctx.fillStyle = '#8b95a5';
+    ctx.font = '10px Segoe UI';
+
+    for (let cm = 0; cm <= 21; cm += 3) {
+        const yPos = paddingTop + graphHeight - (cm / maxValY) * graphHeight;
+        ctx.beginPath();
+        ctx.moveTo(paddingLeft, yPos);
+        ctx.lineTo(w - paddingRight, yPos);
+        ctx.stroke();
+        ctx.fillText(cm + ' cm', 4, yPos + 3);
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft, paddingTop);
+    ctx.lineTo(paddingLeft, h - paddingBottom);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(paddingLeft, h - paddingBottom);
+    ctx.lineTo(w - paddingRight, h - paddingBottom);
+    ctx.stroke();
+
+    const yMax = paddingTop + graphHeight - (spEfectivo() / maxValY) * graphHeight;
+    ctx.strokeStyle = 'rgba(46,204,113,0.5)';
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(paddingLeft, yMax); ctx.lineTo(w - paddingRight, yMax); ctx.stroke();
+
+    const yMin = paddingTop + graphHeight - (minHEfectivo() / maxValY) * graphHeight;
+    ctx.strokeStyle = 'rgba(241,196,15,0.5)';
+    ctx.beginPath(); ctx.moveTo(paddingLeft, yMin); ctx.lineTo(w - paddingRight, yMin); ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (hist.length < 2) return;
+
+    ctx.beginPath();
+    ctx.strokeStyle = '#3aa0ff';
+    ctx.lineWidth = 2.5;
+
+    const stepX = graphWidth / (hist.length - 1);
+
+    hist.forEach((pt, idx) => {
+        const x = paddingLeft + idx * stepX;
+        const valClamped = Math.max(0, Math.min(maxValY, pt.nivel));
+        const y = paddingTop + graphHeight - (valClamped / maxValY) * graphHeight;
+
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    const lastPt = hist[hist.length - 1];
+    const lastX = paddingLeft + (hist.length - 1) * stepX;
+    const lastY = paddingTop + graphHeight - (Math.max(0, Math.min(maxValY, lastPt.nivel)) / maxValY) * graphHeight;
+
+    ctx.fillStyle = '#3aa0ff';
+    ctx.beginPath();
+    ctx.arc(lastX, lastY, 4.5, 0, 2 * Math.PI);
+    ctx.fill();
+}
+
+function setBombaLbl(id,on){
+    const el=document.getElementById(id);
+    if(!el) return;
+    el.innerText=on?'ENCENDIDA':'APAGADA';
+    el.style.color=on?'#2ecc71':'#e74c3c';
+    el.style.fontWeight='700';
+}
+
+function clikTanque(){
+    vistaDetalle=!vistaDetalle;
+    document.getElementById('tanqueEl').style.boxShadow=vistaDetalle?'0 0 0 3px rgba(58,160,255,.5)':'none';
+    pintar();
+}
+
+function clikBomba(){
+    alert('Estado actual de la bomba principal (D21): ' + (datos.estado_bomba ? 'ENCENDIDA' : 'APAGADA'));
+}
+
+function clikFlujo(){
+    alert('Flujo: ' + (datos.hay_flujo ? 'SÍ' : 'NO'));
+}
+
+// CORRECCIÓN BOTÓN INICIO: Actualización instantánea local del estado
+async function toggleSistema(){
+    const nuevoEstado = !datos.sistemaIniciado;
+    datos.sistemaIniciado = nuevoEstado;
+    pintar();
+    
+    try {
+        await fetch('/api/control',{
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({accion:'iniciar_sistema', valor: nuevoEstado})
+        });
+    } catch(e) {
+        datos.sistemaIniciado = !nuevoEstado; // Revertir si falla
+        pintar();
+    }
+    poll();
+}
+
+async function toggleModoManual(){
+    await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({accion:'modo_manual',valor:!datos.modo_manual})}); poll();
+}
+async function toggleBombaManual(){
+    await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({accion:'bomba_manual',valor:!datos.comando_bomba_manual})}); poll();
+}
+async function limpiarBaseDatos(){
+    if(!confirm('¿Eliminar registros?')) return;
+    const res=await fetch('/api/limpiar-registros',{method:'POST'});
+    if(res.ok){ alert('Eliminados.'); cargarTablas(); }
+}
+
+async function cargarTablas(){
+    try{
+        const dMed=await (await fetch('/api/registros')).json();
+        document.getElementById('bodyMediciones').innerHTML = dMed.length? dMed.map(m=>
+            `<tr><td>${m.id}</td><td>${m.fecha_hora}</td><td>${m.nivel_cm}</td><td>${(m.lectura_ultra!==null&&m.lectura_ultra!==undefined)?m.lectura_ultra:'—'}</td><td>${m.hay_flujo?'SI':'NO'}</td><td>${m.estado_bomba?'ON':'OFF'}</td></tr>`
+        ).join('') : '<tr><td colspan="6" style="color:#8b95a5">Sin registros…</td></tr>';
+    }catch(e){}
+    try{
+        const dAud=await (await fetch('/api/auditoria')).json();
+        document.getElementById('bodyAuditoria').innerHTML = dAud.length? dAud.map(a=>
+            `<tr><td>${a.id}</td><td>${a.fecha_hora}</td><td>${a.usuario}</td><td>${a.accion}</td></tr>`
+        ).join('') : '<tr><td colspan="4" style="color:#8b95a5">Sin registros…</td></tr>';
+    }catch(e){}
+}
+
+function verTab(tabId,btn){
+    document.getElementById('tabMediciones').classList.add('hidden');
+    document.getElementById('tabAuditoria').classList.add('hidden');
+    document.getElementById(tabId).classList.remove('hidden');
+    document.querySelectorAll('.tabs .btn').forEach(b=>{b.classList.remove('active','btn-blue');b.classList.add('btn-ghost');});
+    btn.classList.add('active','btn-blue'); btn.classList.remove('btn-ghost');
+}
+
+function iniciarPolling(){ poll(); setInterval(poll,1000); iniciarPollingPID(); }
+
+let pidEditando = false;          
+let pidGuardando = false;         
+let pidTimerGuardado = null;      
+let pidConfirmarHasta = 0;        
+
+const PIDS = ['pidSetpoint', 'pidMinHist'];
+
+function leerSliders() {
+    const sp = parseFloat(document.getElementById('pidSetpoint').value);
+    const minH = parseFloat(document.getElementById('pidMinHist').value);
+    const kp = parseFloat(document.getElementById('pidKp').value);
+    const ki = parseFloat(document.getElementById('pidKi').value);
+    const kd = parseFloat(document.getElementById('pidKd').value);
+    return { setpoint: sp, nivel_min_histeresis: minH, kp: kp, ki: ki, kd: kd };
+}
+
+function setValorSlider(id, valor) {
+    const el = document.getElementById(id);
+    if (!el || typeof valor !== 'number' || isNaN(valor)) return;
+    const v = Number(valor).toFixed(1);
+    if (el.value !== v) el.value = v;
+}
+
+function marcarMsg(texto, color) {
+    const msg = document.getElementById('pidMsg');
+    if (!msg) return;
+    msg.style.color = color || 'var(--muted)';
+    msg.textContent = texto;
+}
+
+function iniciarEdicionSlider() {
+    pidEditando = true;
+    if (pidTimerGuardado) { clearTimeout(pidTimerGuardado); pidTimerGuardado = null; }
+}
+
+function soltarSlider() {
+    if (pidTimerGuardado) { clearTimeout(pidTimerGuardado); pidTimerGuardado = null; }
+    pidEditando = false;
+    pidConfirmarHasta = Date.now() + 4000;   
+    guardarSliders(true);
+}
+
+async function guardarSliders(automatico) {
+    const body = leerSliders();
+    if (isNaN(body.setpoint) || isNaN(body.nivel_min_histeresis)) return;
+    pidGuardando = true;
+    if (automatico) marcarMsg('Guardando…', '#f1c40f');
+    try {
+        const res = await fetch('/api/pid', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(body)
+        });
+        let data = null;
+        try { data = await res.json(); } catch (e) { data = null; }
+
+        if (res.ok && data && data.ok) {
+            if (typeof data.setpoint === 'number' && !pidEditando) setValorSlider('pidSetpoint', data.setpoint);
+            if (typeof data.nivel_min_histeresis === 'number' && !pidEditando) setValorSlider('pidMinHist', data.nivel_min_histeresis);
+            actualizarValoresSliders();
+            pidConfirmarHasta = Date.now() + 4000;
+            if (typeof data.setpoint === 'number') SP_ACTUAL = data.setpoint;
+            if (typeof data.nivel_min_histeresis === 'number') MINH_ACTUAL = data.nivel_min_histeresis;
+            pintar();
+            const avisos = (data && Array.isArray(data.avisos)) ? data.avisos : [];
+            if (avisos.length > 0) marcarMsg('Guardado con ajuste: ' + avisos.join(' · '), '#f1c40f');
+            else marcarMsg('Parámetros aplicados correctamente.', '#2ecc71');
+        } else {
+            const motivo = (data && (data.error || data.mensaje)) ? data.error || data.mensaje : ('HTTP ' + res.status);
+            marcarMsg('No se pudieron aplicar los parámetros (' + motivo + ').', '#e74c3c');
+            await refrescarPID(true);
+        }
+    } catch (e) {
+        marcarMsg('Error de conexión.', '#e74c3c');
+        await refrescarPID(true);
+    } finally {
+        pidGuardando = false;
+    }
+}
+
+function configurarSlidersPID() {
+    PIDS.forEach(function (id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        ['pointerdown', 'mousedown', 'touchstart', 'keydown'].forEach(function (ev) {
+            el.addEventListener(ev, iniciarEdicionSlider, { passive: true });
+        });
+        el.addEventListener('input', function () {
+            iniciarEdicionSlider();
+            actualizarValoresSliders();
+            SP_ACTUAL = parseFloat(document.getElementById('pidSetpoint').value);
+            MINH_ACTUAL = parseFloat(document.getElementById('pidMinHist').value);
+            pintar();
+        });
+        el.addEventListener('change', soltarSlider);
+        ['pointerup', 'mouseup', 'touchend', 'keyup', 'blur'].forEach(function (ev) {
+            el.addEventListener(ev, function () {
+                if (pidEditando) soltarSlider();
+            });
+        });
+        el.addEventListener('focus', iniciarEdicionSlider);
+    });
+}
+
+async function refrescarPID(forzar) {
+    if (pidEditando || pidGuardando) return;   
+    try {
+        const res = await fetch('/api/estado');
+        const data = await res.json();
+        const s = (data && data.estadoSistema) ? data.estadoSistema : {};
+        const salida = (typeof s.salida_pid === 'number') ? s.salida_pid : 0;
+        const nivel = (typeof s.nivel_cm === 'number') ? s.nivel_cm : 0;
+        const sp = (typeof s.setpoint === 'number') ? s.setpoint : null;
+        const minH = (typeof s.nivel_min_histeresis === 'number') ? s.nivel_min_histeresis : null;
+        const err = (sp !== null) ? (sp - nivel) : null;
+
+        const oS = document.getElementById('pidSalidaOut');
+        const oE = document.getElementById('pidErrorOut');
+        const bar = document.getElementById('pidSalidaBar');
+        if (oS) oS.textContent = salida.toFixed(0) + ' %';
+        if (oE) oE.textContent = (err !== null) ? (err.toFixed(1) + ' cm') : '—';
+        if (bar) bar.style.width = Math.max(0, Math.min(100, salida)) + '%';
+
+        if (!forzar && Date.now() < pidConfirmarHasta) return;
+
+        if (sp !== null && minH !== null) {
+            const cambioLimites = (SP_ACTUAL !== sp) || (MINH_ACTUAL !== minH);
+            SP_ACTUAL = sp; MINH_ACTUAL = minH;      
+            if (cambioLimites) pidConfirmarHasta = 0;
+            setValorSlider('pidSetpoint', sp);
+            setValorSlider('pidMinHist', minH);
+            actualizarValoresSliders();
+            if (cambioLimites) { pintar(); dibujarGrafica(); }
+        }
+    } catch (e) { }
+}
+
+async function aplicarPID() {
+    if (pidTimerGuardado) { clearTimeout(pidTimerGuardado); pidTimerGuardado = null; }
+    pidEditando = false;
+    await guardarSliders(false);
+}
+
+function iniciarPollingPID() {
+    configurarSlidersPID();
+    refrescarPID(true);
+    setInterval(refrescarPID, 1000);
+}
+
+(function construirEscala(){
+    const esc=document.getElementById('escala');
+    for(let v=0;v<=20;v+=4){
+        const d=document.createElement('div');
+        d.style.bottom=(v/21.0*100)+'%';
+        d.innerText=v+'cm'; esc.appendChild(d);
+    }
+})();
+</script>
+</body>
+</html>
